@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.agents/
+.claude/
+squat_coach_sessions/
+backend_sessions/
+test-videos/
+*.avi
+
+# Secrets and downloaded binaries
+credentials.yaml
+models/*.task

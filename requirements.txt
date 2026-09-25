@@ -1,0 +1,13 @@
+streamlit>=1.38
+Pillow>=10.0
+opencv-python>=4.9
+mediapipe>=0.10.30,<1.0  # 1.0.x crashes on macOS (Metal helper); uses Tasks API + models/pose_landmarker_full.task
+numpy>=1.26
+scipy>=1.13
+pydantic>=2.7
+pyyaml>=6.0
+python-dotenv>=1.0
+anthropic>=0.34
+streamlit-image-coordinates>=0.1.6
+yt-dlp>=2026.08
+streamlit-authenticator>=0.4.2

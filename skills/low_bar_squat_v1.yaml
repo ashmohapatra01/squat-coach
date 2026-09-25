@@ -1,0 +1,137 @@
+skill:
+  name: low_bar_squat_assessment
+  version: 1.0
+  source: "Reference document supplied with the assignment (low-bar back squat)"
+  camera_assumed: side_view
+
+# assessability:
+#   conditional   -> can be checked from a side-view video if landmarks/bar are visible
+#   proxy_only    -> not directly observable; inferred from a related visible signal
+#   cannot        -> not observable from a single side-view video at all
+#
+# source_pages are placeholders where I could identify the section/figure
+# from the document text but not the exact page number in your paginated
+# PDF (assignment says reference pages 1-35 = combined PDF pages 4-38).
+# Confirm and fill these in against your actual file before treating them
+# as final citations — do not ship guessed page numbers as fact.
+
+criteria:
+  - id: squat_depth
+    title: "Hip crease drops below the top of the patella"
+    source_section: "Squat Depth — Safety and Importance; Fig 2-1, Fig 2-9, Fig 2-11"
+    source_pages: [TBD]
+    camera_requirement: side
+    assessability: conditional
+    evidence:
+      - hip_crease_y
+      - patella_top_y
+      - bottom_frame
+    rule:
+      meets: hip_crease_is_below_patella_top
+      does_not_meet: hip_crease_is_above_patella_top
+      cannot_assess:
+        - landmark_confidence_low
+        - hip_crease_occluded
+        - patella_top_occluded
+    feedback:
+      meets: "Good depth — hips dropped below your knees."
+      fail: "Reach full depth: hips need to drop below the top of your kneecap while keeping the knees tracking over your feet."
+
+  - id: bar_midfoot_alignment
+    title: "Bar stays vertically over the midfoot"
+    source_section: "Loaded Human Movement; Fig 2-5, Fig 2-6, Fig 2-7"
+    source_pages: [TBD]
+    camera_requirement: side
+    assessability: conditional
+    evidence:
+      - bar_x
+      - midfoot_x
+      - tracking_confidence
+    rule:
+      meets: bar_within_tolerance_of_midfoot
+      does_not_meet: bar_outside_tolerance_of_midfoot
+      cannot_assess:
+        - bar_tracking_confidence_low
+        - heel_or_toe_occluded
+    feedback:
+      meets: "Bar stayed balanced over the middle of your foot through the lift."
+      fail: "The bar drifted off the midfoot — that costs you leverage and makes the lift harder than the weight itself."
+
+  - id: hip_drive
+    title: "Hips lead the ascent out of the bottom, not the shoulders"
+    source_section: "Generating hip drive"
+    source_pages: [TBD]
+    camera_requirement: side
+    assessability: proxy_only
+    evidence:
+      - hip_y_trajectory
+      - shoulder_y_trajectory
+      - bottom_frame
+    rule:
+      meets: hip_rises_before_or_with_shoulders
+      does_not_meet: shoulders_rise_before_hips
+      cannot_assess:
+        - trajectory_noise_too_high
+    feedback:
+      meets: "Your hips led the drive out of the bottom — that's the posterior chain doing the work."
+      fail: "Your chest/shoulders rose first — this is a 'good morning' pattern that shifts load off your hips and onto your lower back. Focus on driving your hips straight up."
+    note: "This is inferred from trajectory timing, not directly observed muscle recruitment — hence proxy_only."
+
+  - id: back_angle_estimate
+    title: "Back angle (torso-to-floor) at the bottom of the rep"
+    source_section: "Loaded Human Movement; Fig 2-5, Fig 2-8, Fig 2-22"
+    source_pages: [TBD]
+    camera_requirement: side
+    assessability: conditional
+    evidence:
+      - shoulder_hip_line_angle
+      - bottom_frame
+    rule:
+      report_only: true
+    feedback:
+      meets: "Reported as an estimate — the document does not set one universal numeric target; back angle should be read alongside bar-over-midfoot, not judged alone."
+    note: "The document describes back angle as a relationship to bar position, not a fixed degree range. Do not present a numeric threshold as a document requirement — see build note."
+
+  - id: knee_tracking_frontal
+    title: "Knees track in line with feet (no valgus/cave)"
+    source_section: "Generating hip drive"
+    source_pages: [TBD]
+    camera_requirement: front_or_45deg
+    assessability: cannot
+    evidence: []
+    rule:
+      cannot_assess:
+        - side_view_cannot_show_frontal_plane_motion
+    feedback:
+      cannot_assess: "This needs a front or 45° view — a side-view video can't show whether your knees are caving in."
+
+  - id: stance_width
+    title: "Stance roughly shoulder width, toes out ~30°"
+    source_section: "Generating hip drive; Fig 2-12"
+    source_pages: [TBD]
+    camera_requirement: front_or_overhead
+    assessability: cannot
+    evidence: []
+    rule:
+      cannot_assess:
+        - side_view_cannot_show_stance_width
+    feedback:
+      cannot_assess: "Stance width and toe angle need a front or overhead view to check."
+
+  - id: eye_gaze
+    title: "Eyes down, not looking at the ceiling"
+    source_section: "Fig 2-15, Fig 2-16"
+    source_pages: [TBD]
+    camera_requirement: side_partial
+    assessability: proxy_only
+    evidence:
+      - head_pitch_estimate
+    rule:
+      meets: head_angle_within_neutral_range
+      does_not_meet: head_angle_extended_upward
+      cannot_assess:
+        - face_or_head_landmarks_low_confidence
+    feedback:
+      meets: "Head position looked neutral — good, that supports hip drive."
+      fail: "Your head looked tipped back — this is only a rough estimate from body pose, but it's worth checking; looking up tends to pull your hips and chest forward."
+    note: "Head orientation from pose landmarks is a weak proxy for actual eye gaze — flagged, not asserted, per the reference document's own caution about this being easy to misjudge."
