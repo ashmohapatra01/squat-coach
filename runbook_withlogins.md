@@ -21,16 +21,18 @@ Install ffmpeg with `brew install ffmpeg` if you want it.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-mkdir -p models && curl -L -o models/pose_landmarker_full.task \
-  https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task
 cp .env.example .env
 python scripts/generate_credentials.py
 ```
 
-- The pose model (~9 MB) is not shipped in the package. The `curl` line
-  fetches it up front, but it's optional: if the model is missing, the app
-  downloads it automatically on the first analysis (adds a few seconds, needs
-  internet access).
+- The pose model (~9 MB) is not shipped in the package. The app downloads
+  it automatically into `models/` on the first analysis (adds a few seconds,
+  needs internet access). To fetch it up front instead — e.g. for a machine
+  that will run offline — run:
+  ```bash
+  mkdir -p models && curl -L -o models/pose_landmarker_full.task \
+    https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task
+  ```
 - `generate_credentials.py` writes `credentials.yaml` (bcrypt hashes and a
   random cookie key) and prints the two demo passwords **once** — note them.
   They can't be read back from the file; to reset them, run
@@ -98,7 +100,7 @@ To test trimming, upload any clip over 30 s: it is rejected with the
 |---|---|
 | `credentials.yaml not found` on startup | Run `python scripts/generate_credentials.py`. |
 | Lost the demo passwords | `python scripts/generate_credentials.py --force` prints new ones. |
-| `Pose model not found ... automatic download failed` | No internet access or the download was blocked; run the `curl` line in step 2 (the error message includes it). |
+| `Pose model not found ... automatic download failed` | No internet access or the download was blocked; run the optional `curl` command from step 2 (the error message includes it). |
 | Crash mentioning `DrishtiMetalHelper` / `Service is unavailable` | mediapipe 1.0.x is installed. `pip install "mediapipe>=0.10.30,<1.0"`. |
 | `OpenCV build has no CSRT tracker available` | `pip install opencv-contrib-python` |
 | Annotated video won't play | Install ffmpeg (`brew install ffmpeg`) and re-run the analysis. |
