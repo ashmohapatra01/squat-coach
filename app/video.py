@@ -92,6 +92,17 @@ def get_first_frame(info: VideoInfo, target_height: int = TARGET_HEIGHT):
     return frame
 
 
+def count_frames(info: VideoInfo) -> int:
+    """Counts the frames extract_frames() will yield, without decoding them
+    (grab() skips the decode), so callers can plan a pass up front."""
+    cap = cv2.VideoCapture(str(info.path))
+    n = 0
+    while cap.grab():
+        n += 1
+    cap.release()
+    return n
+
+
 def extract_frames(info: VideoInfo, target_height: int = TARGET_HEIGHT):
     """Yields (frame_index, timestamp_seconds, bgr_frame) resized to target_height,
     preserving aspect ratio, so the frame-to-timestamp mapping stays exact."""

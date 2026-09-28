@@ -13,11 +13,11 @@ import cv2
 import numpy as np
 
 from app import assessor, measurements as meas
-from app.bar_tracker import TargetShape, track_bar
+from app.bar_tracker import BarTracker, TargetShape
 from app.pose import PoseExtractor
 from app.rep_detector import detect_reps
 from app.schemas import Finding, SessionResult
-from app.video import VideoInfo, extract_frames, reencode_for_browser
+from app.video import VideoInfo, count_frames, extract_frames, reencode_for_browser
 
 ProgressFn = Callable[[str, float], None]
 
@@ -49,29 +49,42 @@ def run_pipeline(
     output_dir.mkdir(parents=True, exist_ok=True)
     skill = assessor.load_skill(skill_path)
 
-    # 1. Load frames into memory (fine at 720p for a <=30s clip).
-    frames = []
-    timestamps = []
-    for idx, ts, frame in extract_frames(video_info):
-        frames.append(frame)
-        timestamps.append(ts)
+    # Frames are streamed, never collected: a 30s portrait clip held in memory
+    # at 720p is ~800 MB, over Streamlit Community Cloud's 690 MB minimum.
+    # The clip is read in separate passes instead (decoding is cheap).
+
+    # 1. Count frames and pick the side-choice samples.
+    n_frames = count_frames(video_info)
+    if n_frames == 0:
+        raise RuntimeError("No frames could be read from this video.")
+    sample_idxs = set(np.linspace(0, n_frames - 1, num=min(10, n_frames), dtype=int).tolist())
+    samples = []
+    for idx, _, frame in extract_frames(video_info):
+        if idx in sample_idxs:
+            samples.append(frame)
+            if len(samples) == len(sample_idxs):
+                break
     on_progress("Validating video", 1.0)
 
-    # 2. Pose tracking.
+    # 2+3. Pose and bar tracking in one streaming pass.
     extractor = PoseExtractor()
-    sample_idxs = np.linspace(0, len(frames) - 1, num=min(10, len(frames)), dtype=int)
-    side = extractor.choose_side([frames[i] for i in sample_idxs])
+    side = extractor.choose_side(samples)
+    del samples
 
     poses = []
-    for i, frame in enumerate(frames):
-        poses.append(extractor.extract(i, frame, side, timestamps[i]))
+    bar_points = []
+    bar_tracker = None
+    for i, ts, frame in extract_frames(video_info):
+        poses.append(extractor.extract(i, frame, side, ts))
+        if bar_tracker is None:
+            bar_tracker = BarTracker(frame, bar_init_point, target_shape)
+            bar_points.append(bar_tracker.first_point)
+        else:
+            bar_points.append(bar_tracker.update(i, frame))
         if i % 5 == 0:
-            on_progress("Pose tracking", i / max(len(frames) - 1, 1))
+            on_progress("Pose tracking", i / max(n_frames - 1, 1))
     extractor.close()
     on_progress("Pose tracking", 1.0)
-
-    # 3. Bar tracking.
-    bar_points = track_bar(frames, bar_init_point, target_shape)
     on_progress("Tracking the bar", 1.0)
 
     # 4. Rep detection over the hip trajectory.
@@ -115,7 +128,7 @@ def run_pipeline(
     on_progress("Assessing against the reference document", 1.0)
 
     # 6. Annotated video: skeleton + bar dot/trail + depth reference line.
-    annotated_path, note = _write_annotated_video(frames, poses, bar_points, video_info, output_dir)
+    annotated_path, note = _write_annotated_video(poses, bar_points, video_info, output_dir)
 
     session = SessionResult(
         video_name=video_info.path.name,
@@ -130,19 +143,20 @@ def run_pipeline(
     return PipelineOutput(session=session, annotated_video_path=annotated_path, annotation_note=note)
 
 
-def _write_annotated_video(frames, poses, bar_points, video_info: VideoInfo, output_dir: Path):
-    if not frames:
-        return None, "No frames to annotate."
-
-    h, w = frames[0].shape[:2]
+def _write_annotated_video(poses, bar_points, video_info: VideoInfo, output_dir: Path):
+    """Re-reads the clip frame by frame and draws on each one — see the
+    memory note in run_pipeline()."""
     avi_path = output_dir / "annotated_raw.avi"
-    writer = cv2.VideoWriter(str(avi_path), cv2.VideoWriter_fourcc(*"MJPG"), video_info.fps, (w, h))
+    writer = None
 
     bar_trail: list[tuple[int, int]] = []
     connections = [("shoulder", "hip"), ("hip", "knee"), ("knee", "ankle"), ("ankle", "foot_index"), ("ankle", "heel")]
 
-    for i, frame in enumerate(frames):
-        canvas = frame.copy()
+    for i, _, frame in extract_frames(video_info):
+        if writer is None:
+            h, w = frame.shape[:2]
+            writer = cv2.VideoWriter(str(avi_path), cv2.VideoWriter_fourcc(*"MJPG"), video_info.fps, (w, h))
+        canvas = frame
         pose = poses[i] if i < len(poses) else None
         bar = bar_points[i] if i < len(bar_points) else None
 
@@ -163,6 +177,8 @@ def _write_annotated_video(frames, poses, bar_points, video_info: VideoInfo, out
 
         writer.write(canvas)
 
+    if writer is None:
+        return None, "No frames to annotate."
     writer.release()
 
     mp4_path = output_dir / "annotated.mp4"

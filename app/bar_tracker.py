@@ -65,6 +65,55 @@ def _circularity_score(gray_patch: np.ndarray) -> float:
     return float(min(4 * np.pi * area / (perimeter**2), 1.0))
 
 
+class BarTracker:
+    """Incremental form of track_bar(): feed frames one at a time with
+    update(), so the pipeline never has to hold the whole clip in memory."""
+
+    def __init__(self, first_frame: np.ndarray, init_point: tuple[float, float], target_shape: TargetShape = "plate"):
+        self.target_shape = target_shape
+        half_size = INIT_BOX_HALF_SIZE_BAR if target_shape == "bar" else INIT_BOX_HALF_SIZE_PLATE
+
+        self._tracker = _make_tracker()
+        x0, y0 = init_point
+        box = (
+            max(int(x0 - half_size), 0),
+            max(int(y0 - half_size), 0),
+            half_size * 2,
+            half_size * 2,
+        )
+        self._tracker.init(first_frame, box)
+        self.first_point = BarPoint(0, x0, y0, confidence=1.0, flagged=False)
+
+    def update(self, i: int, frame: np.ndarray) -> BarPoint:
+        """i: this frame's index in the clip (1, 2, ...); frame 0 is the init frame."""
+        ok, bbox = self._tracker.update(frame)
+        if not ok:
+            return BarPoint(i, None, None, confidence=0.0, flagged=True)
+
+        bx, by, bw, bh = bbox
+        cx, cy = bx + bw / 2, by + bh / 2
+
+        if self.target_shape == "bar":
+            # No shape check for a bare bar — trust CSRT's own success signal.
+            # A successful update is treated as reasonably confident; there's
+            # no independent verification step for this mode yet.
+            confidence = 0.75
+            flagged = False
+        else:
+            confidence = 0.75  # base confidence for a successful CSRT update
+            if i % REVERIFY_EVERY_N_FRAMES == 0:
+                x, y, w, h = (int(v) for v in bbox)
+                x, y = max(x, 0), max(y, 0)
+                patch = frame[y : y + h, x : x + w]
+                if patch.size > 0:
+                    gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+                    score = _circularity_score(gray)
+                    confidence = min(confidence, 0.4 + score)
+            flagged = confidence < MIN_CIRCULARITY_SCORE + 0.4
+
+        return BarPoint(i, float(cx), float(cy), confidence=confidence, flagged=flagged)
+
+
 def track_bar(
     frames: list[np.ndarray],
     init_point: tuple[float, float],
@@ -77,48 +126,5 @@ def track_bar(
     trusts CSRT's own success/failure signal for confidence instead)."""
     if not frames:
         return []
-
-    half_size = INIT_BOX_HALF_SIZE_BAR if target_shape == "bar" else INIT_BOX_HALF_SIZE_PLATE
-
-    tracker = _make_tracker()
-    x0, y0 = init_point
-    box = (
-        max(int(x0 - half_size), 0),
-        max(int(y0 - half_size), 0),
-        half_size * 2,
-        half_size * 2,
-    )
-    tracker.init(frames[0], box)
-
-    results: list[BarPoint] = [BarPoint(0, x0, y0, confidence=1.0, flagged=False)]
-
-    for i in range(1, len(frames)):
-        ok, bbox = tracker.update(frames[i])
-        if not ok:
-            results.append(BarPoint(i, None, None, confidence=0.0, flagged=True))
-            continue
-
-        bx, by, bw, bh = bbox
-        cx, cy = bx + bw / 2, by + bh / 2
-
-        if target_shape == "bar":
-            # No shape check for a bare bar — trust CSRT's own success signal.
-            # A successful update is treated as reasonably confident; there's
-            # no independent verification step for this mode yet.
-            confidence = 0.75
-            flagged = False
-        else:
-            confidence = 0.75  # base confidence for a successful CSRT update
-            if i % REVERIFY_EVERY_N_FRAMES == 0:
-                x, y, w, h = (int(v) for v in bbox)
-                x, y = max(x, 0), max(y, 0)
-                patch = frames[i][y : y + h, x : x + w]
-                if patch.size > 0:
-                    gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
-                    score = _circularity_score(gray)
-                    confidence = min(confidence, 0.4 + score)
-            flagged = confidence < MIN_CIRCULARITY_SCORE + 0.4
-
-        results.append(BarPoint(i, float(cx), float(cy), confidence=confidence, flagged=flagged))
-
-    return results
+    tracker = BarTracker(frames[0], init_point, target_shape)
+    return [tracker.first_point] + [tracker.update(i, frames[i]) for i in range(1, len(frames))]
